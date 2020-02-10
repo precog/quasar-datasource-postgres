@@ -42,7 +42,7 @@ lazy val core = project
     libraryDependencies ++= Seq(
       // TODO: Depend on this by default in sbt-quasar-plugin
       "com.slamdata" %% "quasar-foundation" % quasarPluginQuasarVersion.value % "test->test",
-      "org.http4s" %% "jawn-fs2" % "1.0.0-RC2" % Test
+      "org.http4s" %% "jawn-fs2" % "1.0.0" % Test
       // Using this for now instead of argonaut-json: https://github.com/slamdata/quasar/blob/v160.0.0/foundation/src/main/scala/quasar/contrib/argonaut/JawnParser.scala#L25
       // "io.argonaut" %% "argonaut-jawn" % "6.2.3" % Test
     ))
