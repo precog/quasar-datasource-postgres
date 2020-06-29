@@ -38,6 +38,7 @@ import org.slf4s.Logging
 
 import quasar.RateLimiting
 import quasar.api.datasource.{DatasourceError => DE, DatasourceType}
+import quasar.api.datasource.DatasourceError.{malformedConfiguration}
 import quasar.{concurrent => qc}
 import quasar.connector.{ByteStore, MonadResourceErr}
 import quasar.connector.datasource.{LightweightDatasourceModule, Reconfiguration}
@@ -64,8 +65,35 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
       .map(_.sanitized.asJson)
       .getOr(jEmptyObject)
 
-  def reconfigure(original: Json, patch: Json): Either[DE.ConfigurationError[Json], (Reconfiguration, Json)] =
-    Right((Reconfiguration.Reset, patch))
+  def reconfigure(original: Json, patch: Json): Either[DE.ConfigurationError[Json], Json] = {
+    for
+    {
+      org <- original.as[Config[String]].result match 
+      {
+        case Left(_) =>
+          Left(DE.MalformedConfiguration[Json](
+            kind,
+            sanatizeConfig(original),
+            "Source configuration in reconfiguration is malformed."))
+        case Right(x) => Right(x)
+      }
+
+      pat <- patch.as[Config[String]].result match 
+      {
+        case Left(_) => Left(DE.MalformedConfiguration[Json](
+          kind,
+          sanatizeConfig(patch)
+          "Target configuration in reconfiguration is malformed."))
+        case Right(x) => Right(x)
+      }
+
+      reconfigured <- org.reconfigureNonSensitive(pat, kind) match 
+      {
+        case Left(err) => Left(err.copy(config = err.config.asJson))
+        case Right(cfg) => Right(cfg.asJson)
+      }
+    } yield reconfigured
+  }
 
   def lightweightDatasource[F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer, A: Hash](
       config: Json,

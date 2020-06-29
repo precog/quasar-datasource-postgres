@@ -62,6 +62,30 @@ final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
       sanitizedQuery.orNull,
       connectionUri.getFragment))
   }
+
+
+  def reconfigureNonSensitive(patch: Config[URI, Option[Int]], kind: DatasourceType)
+    :Either[InvalidConfiguration[Config[URI, Option[Int]]], Config[URI, Option[Int]]]
+    {
+      if(patch.isSensative)
+      {
+        Left(DatasourceError.InvalidConfiguration[Config[URI, Option[Int]]](
+          kind,
+          patch.sanitize,
+          "Target configuration contains sensitive information."))
+      } else {
+          Right(self.copy(
+              //TODO copy non-sensative data.
+            ))
+      }
+    }
+
+  def isSensitive: Boolean = _ match {
+    case Some(x) => //TODO
+    case None => false
+
+  }
+
 }
 
 object Config {
