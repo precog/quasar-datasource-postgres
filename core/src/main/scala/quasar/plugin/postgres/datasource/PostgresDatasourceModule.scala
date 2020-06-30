@@ -66,10 +66,8 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
       .getOr(jEmptyObject)
 
   def reconfigure(original: Json, patch: Json): Either[DE.ConfigurationError[Json], Json] = {
-    for
-    {
-      org <- original.as[Config[String]].result match 
-      {
+    for{
+      org <- original.as[Config[String]].result match {
         case Left(_) =>
           Left(DE.MalformedConfiguration[Json](
             kind,
@@ -78,8 +76,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
         case Right(x) => Right(x)
       }
 
-      pat <- patch.as[Config[String]].result match 
-      {
+      pat <- patch.as[Config[String]].result match {
         case Left(_) => Left(DE.MalformedConfiguration[Json](
           kind,
           sanatizeConfig(patch)
@@ -87,8 +84,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
         case Right(x) => Right(x)
       }
 
-      reconfigured <- org.reconfigureNonSensitive(pat, kind) match 
-      {
+      reconfigured <- org.reconfigureNonSensitive(pat, kind) match {
         case Left(err) => Left(err.copy(config = err.config.asJson))
         case Right(cfg) => Right(cfg.asJson)
       }

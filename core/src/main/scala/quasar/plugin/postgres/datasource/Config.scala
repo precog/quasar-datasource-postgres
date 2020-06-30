@@ -75,13 +75,13 @@ final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
           "Target configuration contains sensitive information."))
       } else {
           Right(self.copy(
-              //TODO copy non-sensative data.
+              connectionPoolSize = patch.connectionPoolSize
             ))
       }
     }
 
   def isSensitive: Boolean = _ match {
-    case Some(x) => //TODO
+    case Some(x) => connectionURI != null //is there a better way to check the URI?
     case None => false
 
   }
