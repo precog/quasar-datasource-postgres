@@ -71,7 +71,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
         case Left(_) =>
           Left(DE.MalformedConfiguration[Json](
             kind,
-            sanatizeConfig(original),
+            sanitizeConfig(original),
             "Source configuration in reconfiguration is malformed."))
         case Right(x) => Right(x)
       }
@@ -79,7 +79,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
       pat <- patch.as[PatchConfig].result match {
         case Left(_) => Left(DE.MalformedConfiguration[Json](
           kind,
-          sanatizeConfig(patch),
+          sanitizeConfig(patch),
           "Target configuration in reconfiguration is malformed."))
         case Right(x) => Right(x)
       }

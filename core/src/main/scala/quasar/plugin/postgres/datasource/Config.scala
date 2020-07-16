@@ -26,6 +26,12 @@ import java.net.URI
 
 import scala.util.control.NonFatal
 
+import quasar.api.datasource.{DatasourceError, DatasourceType}
+
+import quasar.api.datasource.DatasourceError.InvalidConfiguration
+
+import scalaz.NonEmptyList
+
 import quasar.plugin.postgres.datasource.PostgresCodecs._
 
 final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
@@ -66,28 +72,21 @@ final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
   }
 
 
-  def reconfigureNonSensitive(patch: PatchConfig], kind: DatasourceType)
+  def reconfigureNonSensitive(patch: PatchConfig, kind: DatasourceType)
     :Either[InvalidConfiguration[Config], Config] = {
       if(patch.isSensative)
       {
+
         Left(DatasourceError.InvalidConfiguration[Config](
           kind,
           patch.sanitize,
-          "Target configuration contains sensitive information."))
+          NonEmptyList("Target configuration contains sensitive information.")))
       } else {
-          Right(self.copy(
-              connectionPoolSize = patch.connectionPoolSize
+          Right(this.copy(
+              connectionPoolSize = Option{patch.connectionPoolSize}
             ))
       }
     }
-
-    //isSensative is depricated. Use PatchCOnfig isSensative instead.
-  def isSensitive: Boolean = _ match {
-    case Some(x) => connectionURI != null
-    case None => false
-
-  }
-
 }
 
 object Config {
