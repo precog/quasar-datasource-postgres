@@ -26,6 +26,8 @@ import java.net.URI
 
 import scala.util.control.NonFatal
 
+import quasar.plugin.postgres.datasource.PostgresCodecs._
+
 final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
   @SuppressWarnings(Array("org.wartremover.warts.Null"))
   def sanitized: Config = {
@@ -64,12 +66,11 @@ final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
   }
 
 
-  def reconfigureNonSensitive(patch: Config[URI, Option[Int]], kind: DatasourceType)
-    :Either[InvalidConfiguration[Config[URI, Option[Int]]], Config[URI, Option[Int]]]
-    {
+  def reconfigureNonSensitive(patch: PatchConfig], kind: DatasourceType)
+    :Either[InvalidConfiguration[Config], Config] = {
       if(patch.isSensative)
       {
-        Left(DatasourceError.InvalidConfiguration[Config[URI, Option[Int]]](
+        Left(DatasourceError.InvalidConfiguration[Config](
           kind,
           patch.sanitize,
           "Target configuration contains sensitive information."))
@@ -80,8 +81,9 @@ final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
       }
     }
 
+    //isSensative is depricated. Use PatchCOnfig isSensative instead.
   def isSensitive: Boolean = _ match {
-    case Some(x) => connectionURI != null //is there a better way to check the URI?
+    case Some(x) => connectionURI != null
     case None => false
 
   }
@@ -90,18 +92,6 @@ final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
 
 object Config {
   implicit val codecJson: CodecJson[Config] = {
-    implicit val uriDecodeJson: DecodeJson[URI] =
-      DecodeJson(c => c.as[String] flatMap { s =>
-        try {
-          DecodeResult.ok(new URI(s))
-        } catch {
-          case NonFatal(t) => DecodeResult.fail("URI", c.history)
-        }
-      })
-
-    implicit val uriEncodeJson: EncodeJson[URI] =
-      EncodeJson.of[String].contramap(_.toString)
-
     casecodec2(Config.apply, Config.unapply)("connectionUri", "connectionPoolSize")
   }
 }
