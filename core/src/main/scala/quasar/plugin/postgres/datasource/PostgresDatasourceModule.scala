@@ -62,6 +62,18 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
       .map(_.sanitized.asJson)
       .getOr(jEmptyObject)
 
+  def migrateConfig[F[_]: Sync](config: Json): F[Either[DE.ConfigurationError[Json], Json]] =
+    Sync[F] delay {
+      config.as[Config].result match {
+        case Left(_) =>
+          Left(DE.MalformedConfiguration[Json](
+            kind,
+            sanitizeConfig(config),
+            "Configuration to migrate is malformed."))
+        case Right(cfg) => Right(cfg.asJson)
+      }
+    }
+
   def reconfigure(original: Json, patch: Json): Either[DE.ConfigurationError[Json], (Reconfiguration, Json)] =
     Right((Reconfiguration.Reset, patch))
 

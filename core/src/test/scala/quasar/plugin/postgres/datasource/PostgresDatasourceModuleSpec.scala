@@ -87,4 +87,23 @@ object PostgresDatasourceModuleSpec extends EffectfulQSpec[IO] {
         })
     }
   }
+
+  "config migration" should {
+    "migrate config as itself" >> {
+      val config = Json("connectionUri" := "postgresql://localhost:54322/postgres?user=postgres&password=postgres", "connectionPoolSize" := 12)
+
+      PostgresDatasourceModule.migrateConfig[IO](config).unsafeRunSync() must beRight(config)
+    }
+
+    "fail to migrate malformed config" >> {
+      val malformed = "malformed".asJson
+
+      val error = DatasourceError.MalformedConfiguration(
+        PostgresDatasourceModule.kind,
+        Json(),
+        "Configuration to migrate is malformed.")
+
+      PostgresDatasourceModule.migrateConfig[IO](malformed).unsafeRunSync() must beLeft(error)
+    }
+  }
 }
