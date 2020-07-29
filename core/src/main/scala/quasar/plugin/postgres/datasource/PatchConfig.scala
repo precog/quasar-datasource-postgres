@@ -20,21 +20,24 @@ import slamdata.Predef._
 
 import argonaut._, Argonaut._
 
-import cats.implicits._
+//import cats.implicits._
 
 import java.net.URI
 
-import scala.util.control.NonFatal
+//import scala.util.control.NonFatal
 
 import quasar.plugin.postgres.datasource.PostgresCodecs._
+//import quasar.plugin.postgres.datasource.Sanitization._
 
-final case class PatchConfig(connectionPoolSize: Int, connectionURI: Option[URI]){
 
-  def isSensative: Boolean = this.connectionURI match {
-    case Some(x) => true
-    case None => false
-  } 
+final case class PatchConfig(connectionPoolSize: Int, connectionURI: Option[URI]) {
+  
+  def sanitized: PatchConfig = connectionURI match {
+    case Some(uri) => copy(connectionURI = Some(Sanitization.sanitizeURI(uri)))
+    case None => this
+  }
 
+  def isSensitive: Boolean = connectionURI.isDefined
 }
 
 object PatchConfig{

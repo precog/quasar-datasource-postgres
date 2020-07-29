@@ -20,7 +20,7 @@ import slamdata.Predef._
 
 import argonaut._, Argonaut._
 
-import cats.implicits._
+//import cats.implicits._
 
 import java.net.URI
 

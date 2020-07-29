@@ -38,10 +38,10 @@ import org.slf4s.Logging
 
 import quasar.RateLimiting
 import quasar.api.datasource.{DatasourceError => DE, DatasourceType}
-import quasar.api.datasource.DatasourceError.{malformedConfiguration}
+//import quasar.api.datasource.DatasourceError.{malformedConfiguration}
 import quasar.{concurrent => qc}
 import quasar.connector.{ByteStore, MonadResourceErr}
-import quasar.connector.datasource.{LightweightDatasourceModule, Reconfiguration}
+import quasar.connector.datasource.{LightweightDatasourceModule} //Reconfiguration
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
