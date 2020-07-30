@@ -29,8 +29,6 @@ import doobie._
 import doobie.hikari.HikariTransactor
 import doobie.implicits._
 
-import eu.timepit.refined.auto._
-
 import java.net.URI
 import java.util.concurrent.Executors
 
@@ -66,6 +64,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
       .map(_.sanitized.asJson)
       .getOr(jEmptyObject)   
 
+<<<<<<< HEAD
   def reconfigure(original: Json, patch: Json): Either[DE.ConfigurationError[Json], Json] = {
     for{
       org <- original.as[Config].result match {
@@ -91,6 +90,13 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
       }
     } yield reconfigured
   }
+=======
+  def migrateConfig[F[_]: Sync](config: Json): F[Either[DE.ConfigurationError[Json], Json]] =
+    Sync[F].pure(Right(config))
+
+  def reconfigure(original: Json, patch: Json): Either[DE.ConfigurationError[Json], (Reconfiguration, Json)] =
+    Right((Reconfiguration.Reset, patch))
+>>>>>>> upstream/master
 
   def lightweightDatasource[F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer, A: Hash](
       config: Json,
