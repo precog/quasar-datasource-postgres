@@ -39,7 +39,7 @@ import quasar.api.datasource.{DatasourceError => DE, DatasourceType}
 //import quasar.api.datasource.DatasourceError.{malformedConfiguration}
 import quasar.{concurrent => qc}
 import quasar.connector.{ByteStore, MonadResourceErr}
-import quasar.connector.datasource.{LightweightDatasourceModule} //Reconfiguration
+import quasar.connector.datasource.{LightweightDatasourceModule, Reconfiguration}
 
 
 import scala.concurrent.ExecutionContext
@@ -64,9 +64,8 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
       .map(_.sanitized.asJson)
       .getOr(jEmptyObject)   
 
-<<<<<<< HEAD
-  def reconfigure(original: Json, patch: Json): Either[DE.ConfigurationError[Json], Json] = {
-    for{
+  def reconfigure(original: Json, patch: Json): Either[DE.ConfigurationError[Json], (Reconfiguration, Json)] = {
+    val back = for{
       org <- original.as[Config].result match {
         case Left(_) =>
           Left(DE.MalformedConfiguration[Json](
@@ -75,7 +74,6 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
             "Source configuration in reconfiguration is malformed."))
         case Right(x) => Right(x)
       }
-      //TODO turn pat into PatchCOnfig. DOes checks for me.
       pat <- patch.as[PatchConfig].result match {
         case Left(_) => Left(DE.MalformedConfiguration[Json](
           kind,
@@ -89,14 +87,11 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
         case Right(cfg) => Right(cfg.asJson)
       }
     } yield reconfigured
+    back.tupleLeft(Reconfiguration.Reset)
   }
-=======
+
   def migrateConfig[F[_]: Sync](config: Json): F[Either[DE.ConfigurationError[Json], Json]] =
     Sync[F].pure(Right(config))
-
-  def reconfigure(original: Json, patch: Json): Either[DE.ConfigurationError[Json], (Reconfiguration, Json)] =
-    Right((Reconfiguration.Reset, patch))
->>>>>>> upstream/master
 
   def lightweightDatasource[F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer, A: Hash](
       config: Json,
