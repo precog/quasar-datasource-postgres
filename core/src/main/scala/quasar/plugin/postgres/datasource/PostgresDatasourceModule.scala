@@ -30,6 +30,7 @@ import doobie.hikari.HikariTransactor
 import doobie.implicits._
 
 import java.net.URI
+import java.util.UUID
 import java.util.concurrent.Executors
 
 import org.slf4s.Logging
@@ -38,7 +39,7 @@ import quasar.RateLimiting
 import quasar.api.datasource.{DatasourceError => DE, DatasourceType}
 //import quasar.api.datasource.DatasourceError.{malformedConfiguration}
 import quasar.{concurrent => qc}
-import quasar.connector.{ByteStore, MonadResourceErr}
+import quasar.connector.{ByteStore, MonadResourceErr, ExternalCredentials}
 import quasar.connector.datasource.{LightweightDatasourceModule, Reconfiguration}
 
 
@@ -96,7 +97,8 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
   def lightweightDatasource[F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer, A: Hash](
       config: Json,
       rateLimiter: RateLimiting[F, A],
-      byteStore: ByteStore[F])(
+      byteStore: ByteStore[F],
+      getAuth: UUID => F[Option[ExternalCredentials[F]]])(
       implicit ec: ExecutionContext)
       : Resource[F, Either[InitErr, LightweightDatasourceModule.DS[F]]] = {
 
