@@ -65,6 +65,11 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
       .map(_.sanitized.asJson)
       .getOr(jEmptyObject)   
 
+  def sanitizePatch(config: Json): Json =
+    config.as[PatchConfig]
+      .map(_.sanitized.asJson)
+      .getOr(jEmptyObject)   
+
   def reconfigure(original: Json, patch: Json): Either[DE.ConfigurationError[Json], (Reconfiguration, Json)] = {
     val back = for{
       org <- original.as[Config].result match {
@@ -78,7 +83,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
       pat <- patch.as[PatchConfig].result match {
         case Left(_) => Left(DE.MalformedConfiguration[Json](
           kind,
-          sanitizeConfig(patch),
+          sanitizePatch(patch),
           "Target configuration in reconfiguration is malformed."))
         case Right(x) => Right(x)
       }

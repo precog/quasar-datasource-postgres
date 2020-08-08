@@ -20,11 +20,7 @@ import slamdata.Predef._
 
 import argonaut._, Argonaut._
 
-//import cats.implicits._
-
 import java.net.URI
-
-//import scala.util.control.NonFatal
 
 import quasar.api.datasource.{DatasourceError, DatasourceType}
 
@@ -33,7 +29,6 @@ import quasar.api.datasource.DatasourceError.InvalidConfiguration
 import scalaz.NonEmptyList
 
 import quasar.plugin.postgres.datasource.PostgresCodecs._
-//import quasar.plugin.postgres.datasource.Sanitization._
 
 final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
   @SuppressWarnings(Array("org.wartremover.warts.Null"))

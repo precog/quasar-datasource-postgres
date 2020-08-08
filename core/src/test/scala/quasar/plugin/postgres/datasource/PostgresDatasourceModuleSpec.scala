@@ -29,10 +29,13 @@ import quasar.api.resource.ResourcePath
 import quasar.connector.{ByteStore, ResourceError}
 import quasar.contrib.scalaz.MonadError_
 
+import java.net.URI
 import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
 
 import shims._
+
+import scalaz.NonEmptyList
 
 object PostgresDatasourceModuleSpec extends EffectfulQSpec[IO] {
 
@@ -85,6 +88,64 @@ object PostgresDatasourceModuleSpec extends EffectfulQSpec[IO] {
 
           case _ => ko("Expected connection to succeed").pure[IO]
         })
+    }
+  }
+  
+  "reconfigure" >> {
+    
+    val origin = Json.obj(  
+      "connectionPoolSIze" -> jNumber(9),
+      "connectionUri" -> jString("ftp://test.tst:pswd@www.origin.com:8080")
+      )
+
+    val patchWUri = Json.obj( 
+      "connectionPoolSIze" -> jNumber(10),
+      "connectionUri" -> jString("ftp://test.tst:pswd@www.patch.bar:8081")
+      )
+        
+    val patchNoUri = Json.obj(
+      "connectionPoolSIze" -> jNumber(11)
+      )
+
+    "replace non-sensitive info in origin with non-sensitive patch" >> {
+      
+      val expected = Json.obj(
+        "connectionPoolSIze" -> jNumber(11),
+        "connectionUri" -> jString("ftp://test.tst:pswd@www.origin.com:8080")
+        )
+
+      PostgresDatasourceModule.reconfigure(origin, patchNoUri) must beRight(expected)
+    }
+ 
+    "sensitive info in patch causes InvalidConfiguration error" >> {
+      
+      val tst = new URI("ftp://test.tst:pswd@www.patch.bar:8081")
+      val cfg = PatchConfig(10, Some(tst))
+
+      PostgresDatasourceModule.reconfigure(origin, patchWUri) must beLeft(
+        DatasourceError.InvalidConfiguration[PatchConfig](
+          PostgresDatasourceModule.kind,
+          cfg.sanitized,
+          NonEmptyList("Target configuration contains sensitive information.")))
+    }
+
+    "fails with malformed configuration error if origin is malformed" >> {
+  
+      PostgresDatasourceModule.reconfigure(Json.obj(), patchNoUri) must beLeft(
+        DatasourceError.MalformedConfiguration(
+          PostgresDatasourceModule.kind,
+          Json.obj(),
+          "Source configuration is reconfiguration is malformed."))
+    }
+
+
+    "fails with malformed configuration error if patch is malformed" >> {
+  
+      PostgresDatasourceModule.reconfigure(origin, Json.obj()) must beLeft(
+        DatasourceError.MalformedConfiguration(
+          PostgresDatasourceModule.kind,
+          Json.obj(),
+          "Target configuration is reconfiguration is malformed."))
     }
   }
 }
