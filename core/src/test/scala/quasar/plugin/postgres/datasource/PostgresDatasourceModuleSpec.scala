@@ -27,6 +27,7 @@ import quasar.{EffectfulQSpec, RateLimiter, NoopRateLimitUpdater, RateLimiting}
 import quasar.api.datasource.DatasourceError
 import quasar.api.resource.ResourcePath
 import quasar.connector.{ByteStore, ResourceError}
+import quasar.connector.datasource.{Reconfiguration}
 import quasar.contrib.scalaz.MonadError_
 
 import java.net.URI
@@ -94,27 +95,27 @@ object PostgresDatasourceModuleSpec extends EffectfulQSpec[IO] {
   "reconfigure" >> {
     
     val origin = Json.obj(  
-      "connectionPoolSIze" -> jNumber(9),
+      "connectionPoolSize" -> jNumber(9),
       "connectionUri" -> jString("ftp://test.tst:pswd@www.origin.com:8080")
       )
 
     val patchWUri = Json.obj( 
-      "connectionPoolSIze" -> jNumber(10),
+      "connectionPoolSize" -> jNumber(10),
       "connectionUri" -> jString("ftp://test.tst:pswd@www.patch.bar:8081")
       )
         
     val patchNoUri = Json.obj(
-      "connectionPoolSIze" -> jNumber(11)
+      "connectionPoolSize" -> jNumber(11)
       )
 
     "replace non-sensitive info in origin with non-sensitive patch" >> {
       
       val expected = Json.obj(
-        "connectionPoolSIze" -> jNumber(11),
+        "connectionPoolSize" -> jNumber(11),
         "connectionUri" -> jString("ftp://test.tst:pswd@www.origin.com:8080")
         )
 
-      PostgresDatasourceModule.reconfigure(origin, patchNoUri) must beRight(expected)
+      PostgresDatasourceModule.reconfigure(origin, patchNoUri) must beRight((Reconfiguration.Reset, expected))
     }
  
     "sensitive info in patch causes InvalidConfiguration error" >> {
@@ -123,9 +124,9 @@ object PostgresDatasourceModuleSpec extends EffectfulQSpec[IO] {
       val cfg = PatchConfig(10, Some(tst))
 
       PostgresDatasourceModule.reconfigure(origin, patchWUri) must beLeft(
-        DatasourceError.InvalidConfiguration[PatchConfig](
+        DatasourceError.InvalidConfiguration[Json](
           PostgresDatasourceModule.kind,
-          cfg.sanitized,
+          cfg.sanitized.asJson,
           NonEmptyList("Target configuration contains sensitive information.")))
     }
 
@@ -135,7 +136,7 @@ object PostgresDatasourceModuleSpec extends EffectfulQSpec[IO] {
         DatasourceError.MalformedConfiguration(
           PostgresDatasourceModule.kind,
           Json.obj(),
-          "Source configuration is reconfiguration is malformed."))
+          "Source configuration in reconfiguration is malformed."))
     }
 
 
@@ -145,7 +146,7 @@ object PostgresDatasourceModuleSpec extends EffectfulQSpec[IO] {
         DatasourceError.MalformedConfiguration(
           PostgresDatasourceModule.kind,
           Json.obj(),
-          "Target configuration is reconfiguration is malformed."))
+          "Target configuration in reconfiguration is malformed."))
     }
   }
 }
