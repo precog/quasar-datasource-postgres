@@ -23,12 +23,10 @@ import argonaut._, Argonaut._
 import java.net.URI
 
 import quasar.api.datasource.{DatasourceError, DatasourceType}
-
 import quasar.api.datasource.DatasourceError.InvalidConfiguration
+import quasar.plugin.postgres.datasource.PostgresCodecs._
 
 import scalaz.NonEmptyList
-
-import quasar.plugin.postgres.datasource.PostgresCodecs._
 
 final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
   @SuppressWarnings(Array("org.wartremover.warts.Null"))
@@ -38,17 +36,17 @@ final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
 
 
   def reconfigureNonSensitive(patch: PatchConfig, kind: DatasourceType)
-    :Either[InvalidConfiguration[PatchConfig], Config] = {
-      if(patch.isSensitive){
-        Left(DatasourceError.InvalidConfiguration[PatchConfig](
-          kind,
-          patch.sanitized,
-          NonEmptyList("Target configuration contains sensitive information.")))
-      } else {
-          Right(this.copy(
-              connectionPoolSize = Option{patch.connectionPoolSize}))
-      }
+      :Either[InvalidConfiguration[PatchConfig], Config] = {
+    if(patch.isSensitive){
+      Left(DatasourceError.InvalidConfiguration[PatchConfig](
+        kind,
+        patch.sanitized,
+        NonEmptyList("Target configuration contains sensitive information.")))
+    } else {
+      Right(this.copy(
+        connectionPoolSize = Some(patch.connectionPoolSize)))
     }
+  }
 }
 
 object Config {

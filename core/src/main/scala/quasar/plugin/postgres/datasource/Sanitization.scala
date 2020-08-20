@@ -18,51 +18,43 @@ package quasar.plugin.postgres.datasource
 
 import slamdata.Predef._
 
-//import argonaut._, Argonaut._
-
 import cats.implicits._
 
 import java.net.URI
 
-//import scala.util.control.NonFatal
-
-
-
-
 object Sanitization{
 
   def sanitizeURI(uri: URI): URI = {
-        val sanitizedUserInfo =
-          Option(uri.getUserInfo) map { ui =>
-           val colon = ui.indexOf(':')
+    val sanitizedUserInfo =
+      Option(uri.getUserInfo) map { ui =>
+        val colon = ui.indexOf(':')
+        if (colon === -1)
+          ui
+        else
+          ui.substring(0, colon) + s":${Redacted}"
+       }
+  
+     val sanitizedQuery =
+      Option(uri.getQuery) map { q =>
+        val pairs = q.split('&').toList map { kv =>
+          if (kv.toLowerCase.startsWith("password"))
+            s"password=${Redacted}"
+          else if (kv.toLowerCase.startsWith("sslpassword"))
+            s"sslpassword=${Redacted}"
+          else
+            kv
+        }
 
-           if (colon === -1)
-             ui
-           else
-              ui.substring(0, colon) + s":${Redacted}"
-          }
+        pairs.intercalate("&")
+      }
 
-       val sanitizedQuery =
-          Option(uri.getQuery) map { q =>
-            val pairs = q.split('&').toList map { kv =>
-              if (kv.toLowerCase.startsWith("password"))
-                s"password=${Redacted}"
-             else if (kv.toLowerCase.startsWith("sslpassword"))
-               s"sslpassword=${Redacted}"
-             else
-               kv
-           }
-
-           pairs.intercalate("&")
-          }
-
-        new URI(
-         uri.getScheme,
-         sanitizedUserInfo.orNull,
-         uri.getHost,
-         uri.getPort,
-         uri.getPath,
-         sanitizedQuery.orNull,
-         uri.getFragment)
+      new URI(
+        uri.getScheme,
+        sanitizedUserInfo.orNull,
+        uri.getHost,
+        uri.getPort,
+        uri.getPath,
+        sanitizedQuery.orNull,
+        uri.getFragment)
       }
 }
