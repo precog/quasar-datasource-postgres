@@ -20,64 +20,37 @@ import slamdata.Predef._
 
 import argonaut._, Argonaut._
 
-import cats.implicits._
-
 import java.net.URI
 
-import scala.util.control.NonFatal
+import quasar.api.datasource.{DatasourceError, DatasourceType}
+import quasar.api.datasource.DatasourceError.InvalidConfiguration
+import quasar.plugin.postgres.datasource.PostgresCodecs._
+
+import scalaz.NonEmptyList
 
 final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
   @SuppressWarnings(Array("org.wartremover.warts.Null"))
   def sanitized: Config = {
-    val sanitizedUserInfo =
-      Option(connectionUri.getUserInfo) map { ui =>
-        val colon = ui.indexOf(':')
+    copy(connectionUri = Sanitization.sanitizeURI(connectionUri))
+  }
 
-        if (colon === -1)
-          ui
-        else
-          ui.substring(0, colon) + s":${Redacted}"
-      }
 
-    val sanitizedQuery =
-      Option(connectionUri.getQuery) map { q =>
-        val pairs = q.split('&').toList map { kv =>
-          if (kv.toLowerCase.startsWith("password"))
-            s"password=${Redacted}"
-          else if (kv.toLowerCase.startsWith("sslpassword"))
-            s"sslpassword=${Redacted}"
-          else
-            kv
-        }
-
-        pairs.intercalate("&")
-      }
-
-    copy(connectionUri = new URI(
-      connectionUri.getScheme,
-      sanitizedUserInfo.orNull,
-      connectionUri.getHost,
-      connectionUri.getPort,
-      connectionUri.getPath,
-      sanitizedQuery.orNull,
-      connectionUri.getFragment))
+  def reconfigureNonSensitive(patch: PatchConfig, kind: DatasourceType)
+      :Either[InvalidConfiguration[PatchConfig], Config] = {
+    if(patch.isSensitive){
+      Left(DatasourceError.InvalidConfiguration[PatchConfig](
+        kind,
+        patch.sanitized,
+        NonEmptyList("Target configuration contains sensitive information.")))
+    } else {
+      Right(this.copy(
+        connectionPoolSize = Some(patch.connectionPoolSize)))
+    }
   }
 }
 
 object Config {
   implicit val codecJson: CodecJson[Config] = {
-    implicit val uriDecodeJson: DecodeJson[URI] =
-      DecodeJson(c => c.as[String] flatMap { s =>
-        try {
-          DecodeResult.ok(new URI(s))
-        } catch {
-          case NonFatal(t) => DecodeResult.fail("URI", c.history)
-        }
-      })
-
-    implicit val uriEncodeJson: EncodeJson[URI] =
-      EncodeJson.of[String].contramap(_.toString)
-
     casecodec2(Config.apply, Config.unapply)("connectionUri", "connectionPoolSize")
   }
 }
