@@ -37,7 +37,7 @@ import org.slf4s.Logging
 
 import quasar.RateLimiting
 import quasar.api.datasource.{DatasourceError => DE, DatasourceType}
-import quasar.{concurrent => qc}
+import quasar.concurrent._
 import quasar.connector.{ByteStore, MonadResourceErr, ExternalCredentials}
 import quasar.connector.datasource.{LightweightDatasourceModule, Reconfiguration}
 
@@ -62,12 +62,12 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
   def sanitizeConfig(config: Json): Json =
     config.as[Config]
       .map(_.sanitized.asJson)
-      .getOr(jEmptyObject)   
+      .getOr(jEmptyObject)
 
   def sanitizePatch(config: Json): Json =
     config.as[PatchConfig]
       .map(_.sanitized.asJson)
-      .getOr(jEmptyObject)   
+      .getOr(jEmptyObject)
 
   def reconfigure(original: Json, patch: Json): Either[DE.ConfigurationError[Json], (Reconfiguration, Json)] = {
     val back = for{
@@ -130,7 +130,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
 
       awaitPool <- EitherT.right(awaitConnPool[F](s"pgsrc-await-$suffix", connPoolSize))
 
-      xaPool <- EitherT.right(transactPool[F](s"pgsrc-transact-$suffix"))
+      xaPool <- EitherT.right(Blocker.cached[F](s"pgsrc-transact-$suffix"))
 
       xa <- EitherT.right(hikariTransactor[F](cfg.connectionUri, connPoolSize, awaitPool, xaPool))
 
@@ -153,7 +153,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
       : Resource[F, ExecutionContext] = {
 
     val alloc =
-      F.delay(Executors.newFixedThreadPool(size, qc.NamedDaemonThreadFactory(name)))
+      F.delay(Executors.newFixedThreadPool(size, NamedDaemonThreadFactory(name)))
 
     Resource.make(alloc)(es => F.delay(es.shutdown()))
       .map(ExecutionContext.fromExecutor)
@@ -180,15 +180,5 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
         }
       }
     }
-  }
-
-  private def transactPool[F[_]](name: String)(implicit F: Sync[F])
-      : Resource[F, Blocker] = {
-
-    val alloc =
-      F.delay(Executors.newCachedThreadPool(qc.NamedDaemonThreadFactory(name)))
-
-    Resource.make(alloc)(es => F.delay(es.shutdown()))
-      .map(es => qc.Blocker(ExecutionContext.fromExecutor(es)))
   }
 }
