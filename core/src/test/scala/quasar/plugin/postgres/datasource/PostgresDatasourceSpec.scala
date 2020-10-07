@@ -37,7 +37,7 @@ import quasar.{IdStatus, ScalarStage, ScalarStages}
 import quasar.api.ColumnType
 import quasar.api.resource.{ResourcePathType => RPT, _}
 import quasar.common.CPath
-import quasar.{concurrent => qc}
+import quasar.concurrent.unsafe._
 import quasar.connector.{ResourceError => RE, _}
 import quasar.connector.datasource.{DatasourceSpec, LightweightDatasourceModule}
 import quasar.contrib.scalaz.MonadError_
@@ -68,7 +68,7 @@ object PostgresDatasourceSpec
   implicit val ioMonadResourceErr: MonadError_[IO, RE] =
     MonadError_.facet[IO](RE.throwableP)
 
-  val xaBlocker = qc.Blocker.cached("postgres-datasource-spec")
+  val xaBlocker = Blocker.unsafeCached("postgres-datasource-spec")
 
   val xa = Transactor.fromDriverManager[IO](
     PostgresDriverFqcn,
