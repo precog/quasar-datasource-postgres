@@ -58,3 +58,4 @@ lazy val core = project
       "io.argonaut" %% "argonaut-jawn" % "6.3.0-M2" % Test
     ))
   .enablePlugins(QuasarPlugin)
+  .evictToLocal("QUASAR_PATH", "connector", true)

@@ -95,7 +95,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
     back.tupleLeft(Reconfiguration.Reset)
   }
 
-  def migrateConfig[F[_]: Sync](config: Json): F[Either[DE.ConfigurationError[Json], Json]] =
+  def migrateConfig[F[_]: Sync](from: Long, to: Long, config: Json): F[Either[DE.ConfigurationError[Json], Json]] =
     Sync[F].pure(Right(config))
 
   def lightweightDatasource[F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer, A: Hash](
