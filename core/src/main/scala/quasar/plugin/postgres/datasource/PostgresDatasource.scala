@@ -71,7 +71,7 @@ final class PostgresDatasource[F[_]: MonadResourceErr: Sync](
           .evalMap(c => runCIO(c)(back.map(_.map(_.leftMap(_.translate(runCIO(c)))))))
           .evalMap {
             case Right((s, stages)) =>
-              QueryResult.typed(DataFormat.ldjson, s, stages).pure[F]
+              QueryResult.typed(DataFormat.ldjson, ResultData.Continuous(s), stages).pure[F]
 
             case Left(re) =>
               MonadResourceErr[F].raiseError[QueryResult[F]](re)

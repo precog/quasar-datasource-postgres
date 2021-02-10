@@ -198,7 +198,7 @@ object PostgresDatasourceSpec
         case QueryResult.Typed(fmt, bs, stages) =>
           fmt must_=== DataFormat.ldjson
           stages must_=== ScalarStages.Id
-          bs.compile.toList map (_ must beEmpty)
+          bs.data.compile.toList map (_ must beEmpty)
 
         case _ => IO.pure(ko("Expected QueryResult.Typed"))
       }
@@ -395,7 +395,7 @@ object PostgresDatasourceSpec
       : IO[(ScalarStages, List[A])] =
     pgds.evaluate(ir) use {
       case QueryResult.Typed(_, s, stages) =>
-        s.chunks.parseJsonStream[Json]
+        s.data.chunks.parseJsonStream[Json]
           .map(_.as[A].toOption)
           .unNone
           .compile.toList
