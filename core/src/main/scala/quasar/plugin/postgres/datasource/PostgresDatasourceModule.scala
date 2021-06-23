@@ -124,7 +124,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
     val init = for {
       cfg <- EitherT(cfg0.pure[Resource[F, ?]])
 
-      suffix <- EitherT.right(Resource.liftF(Sync[F].delay(Random.alphanumeric.take(6).mkString)))
+      suffix <- EitherT.right(Resource.eval(Sync[F].delay(Random.alphanumeric.take(6).mkString)))
 
       connPoolSize = cfg.connectionPoolSize getOrElse DefaultConnectionPoolSize
 

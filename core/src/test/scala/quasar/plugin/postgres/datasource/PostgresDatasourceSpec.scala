@@ -112,7 +112,7 @@ object PostgresDatasourceSpec
 
   implicit class DatasourceOps(val ds: LightweightDatasourceModule.DS[IO]) extends scala.AnyVal {
     def evaluate(ir: InterpretedRead[ResourcePath]) =
-      ds.loadFull(ir) getOrElseF Resource.liftF(IO.raiseError(new RuntimeException("No batch loader!")))
+      ds.loadFull(ir) getOrElseF Resource.eval(IO.raiseError(new RuntimeException("No batch loader!")))
   }
 
   "schema handling" >> {

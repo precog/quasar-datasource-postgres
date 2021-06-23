@@ -78,12 +78,12 @@ final class PostgresDatasource[F[_]: MonadResourceErr: Sync](
           }
 
       case _ =>
-        Resource.liftF(MonadResourceErr[F].raiseError(RE.notAResource(ir.path)))
+        Resource.eval(MonadResourceErr[F].raiseError(RE.notAResource(ir.path)))
     }
   }))
 
   def pathIsResource(path: ResourcePath): Resource[F, Boolean] =
-    Resource.liftF(pathToLoc(path) match {
+    Resource.eval(pathToLoc(path) match {
       case Some(Right((schema, table))) =>
         tableExists(schema, table).transact(xa)
 
@@ -100,7 +100,7 @@ final class PostgresDatasource[F[_]: MonadResourceErr: Sync](
     else
       pathToLoc(prefixPath) match {
         case Some(Right((schema, table))) =>
-          Resource.liftF(
+          Resource.eval(
             tableExists(schema, table)
               .map(p => if (p) Some(Stream.empty.covaryAll[F, (ResourceName, RPT.Physical)]) else None)
               .transact(xa))
