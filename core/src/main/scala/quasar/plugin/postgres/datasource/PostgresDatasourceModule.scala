@@ -124,7 +124,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
     val init = for {
       cfg <- EitherT(cfg0.pure[Resource[F, ?]])
 
-      suffix <- EitherT.right(Resource.liftF(Sync[F].delay(Random.alphanumeric.take(6).mkString)))
+      suffix <- EitherT.right(Resource.eval(Sync[F].delay(Random.alphanumeric.take(6).mkString)))
 
       connPoolSize = cfg.connectionPoolSize getOrElse DefaultConnectionPoolSize
 
@@ -134,12 +134,12 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
 
       xa <- EitherT.right(hikariTransactor[F](cfg.connectionUri, connPoolSize, awaitPool, xaPool))
 
-      _ <- EitherT(Resource.liftF(validateConnection.transact(xa) recover {
+      _ <- EitherT(Resource.eval(validateConnection.transact(xa) recover {
         case NonFatal(ex: Exception) =>
           Left(DE.connectionFailed[Json, InitErr](kind, sanitizeConfig(config), ex))
       }))
 
-      _ <- EitherT.right[InitErr](Resource.liftF(Sync[F].delay(
+      _ <- EitherT.right[InitErr](Resource.eval(Sync[F].delay(
         log.info(s"Initialized postgres datasource: tag = $suffix, config = ${cfg.sanitized.asJson}"))))
 
     } yield new PostgresDatasource(xa): LightweightDatasourceModule.DS[F]
