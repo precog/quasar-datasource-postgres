@@ -39,7 +39,7 @@ import quasar.RateLimiting
 import quasar.api.datasource.{DatasourceError => DE, DatasourceType}
 import quasar.concurrent._
 import quasar.connector.{ByteStore, MonadResourceErr, ExternalCredentials}
-import quasar.connector.datasource.{LightweightDatasourceModule, Reconfiguration}
+import quasar.connector.datasource.{DatasourceModule, Reconfiguration}
 
 
 import scala.concurrent.ExecutionContext
@@ -47,7 +47,7 @@ import scala.concurrent.duration._
 import scala.util.Random
 import scala.util.control.NonFatal
 
-object PostgresDatasourceModule extends LightweightDatasourceModule with Logging {
+object PostgresDatasourceModule extends DatasourceModule with Logging {
 
   type InitErr = DE.InitializationError[Json]
 
@@ -98,13 +98,13 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
   def migrateConfig[F[_]: Sync](from: Long, to: Long, config: Json): F[Either[DE.ConfigurationError[Json], Json]] =
     Sync[F].pure(Right(config))
 
-  def lightweightDatasource[F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer, A: Hash](
+  def datasource[F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer, A: Hash](
       config: Json,
       rateLimiter: RateLimiting[F, A],
       byteStore: ByteStore[F],
       getAuth: UUID => F[Option[ExternalCredentials[F]]])(
       implicit ec: ExecutionContext)
-      : Resource[F, Either[InitErr, LightweightDatasourceModule.DS[F]]] = {
+      : Resource[F, Either[InitErr, DatasourceModule.DS[F]]] = {
 
     val cfg0: Either[InitErr, Config] =
       config.as[Config].fold(
@@ -142,7 +142,7 @@ object PostgresDatasourceModule extends LightweightDatasourceModule with Logging
       _ <- EitherT.right[InitErr](Resource.eval(Sync[F].delay(
         log.info(s"Initialized postgres datasource: tag = $suffix, config = ${cfg.sanitized.asJson}"))))
 
-    } yield new PostgresDatasource(xa): LightweightDatasourceModule.DS[F]
+    } yield new PostgresDatasource(xa): DatasourceModule.DS[F]
 
     init.value
   }

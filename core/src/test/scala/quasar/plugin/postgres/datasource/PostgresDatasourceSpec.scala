@@ -39,7 +39,7 @@ import quasar.api.resource.{ResourcePathType => RPT, _}
 import quasar.common.CPath
 import quasar.concurrent.unsafe._
 import quasar.connector.{ResourceError => RE, _}
-import quasar.connector.datasource.{DatasourceSpec, LightweightDatasourceModule}
+import quasar.connector.datasource.{DatasourceSpec, DatasourceModule}
 import quasar.contrib.scalaz.MonadError_
 import quasar.qscript.InterpretedRead
 
@@ -75,7 +75,7 @@ object PostgresDatasourceSpec
     "jdbc:postgresql://localhost:54322/postgres?user=postgres&password=postgres",
     xaBlocker)
 
-  val pgds: LightweightDatasourceModule.DS[IO] = PostgresDatasource[IO](xa)
+  val pgds: DatasourceModule.DS[IO] = PostgresDatasource[IO](xa)
 
   val datasource = pgds.pure[Resource[IO, ?]]
 
@@ -110,7 +110,7 @@ object PostgresDatasourceSpec
     teardown.transact(xa).unsafeRunSync()
   }
 
-  implicit class DatasourceOps(val ds: LightweightDatasourceModule.DS[IO]) extends scala.AnyVal {
+  implicit class DatasourceOps(val ds: DatasourceModule.DS[IO]) extends scala.AnyVal {
     def evaluate(ir: InterpretedRead[ResourcePath]) =
       ds.loadFull(ir) getOrElseF Resource.eval(IO.raiseError(new RuntimeException("No batch loader!")))
   }

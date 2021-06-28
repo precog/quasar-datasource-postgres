@@ -57,7 +57,7 @@ object PostgresDatasourceModuleSpec extends EffectfulQSpec[IO] {
       val cfg = Json("malformed" := true)
 
       rateLimiting.flatMap(rl =>
-        PostgresDatasourceModule.lightweightDatasource[IO, UUID](cfg, rl, ByteStore.void[IO], _ => IO(None))) use {
+        PostgresDatasourceModule.datasource[IO, UUID](cfg, rl, ByteStore.void[IO], _ => IO(None))) use {
           case Left(DatasourceError.MalformedConfiguration(_, c, _)) =>
             IO.pure(c must_=== jString(Redacted))
 
@@ -69,7 +69,7 @@ object PostgresDatasourceModuleSpec extends EffectfulQSpec[IO] {
       val cfg = Json("connectionUri" := "postgresql://localhost:1234/foobar?user=alice&password=secret")
 
       rateLimiting.flatMap(rl =>
-        PostgresDatasourceModule.lightweightDatasource[IO, UUID](cfg, rl, ByteStore.void[IO], _ => IO(None))) use {
+        PostgresDatasourceModule.datasource[IO, UUID](cfg, rl, ByteStore.void[IO], _ => IO(None))) use {
           case Left(DatasourceError.ConnectionFailed(_, c, _)) =>
             IO.pure(c.some must_=== cfg.as[Config].map(_.sanitized.asJson).toOption)
 
@@ -81,7 +81,7 @@ object PostgresDatasourceModuleSpec extends EffectfulQSpec[IO] {
       val cfg = Json("connectionUri" := "postgresql://localhost:54322/postgres?user=postgres&password=postgres")
 
       rateLimiting.flatMap(rl =>
-        PostgresDatasourceModule.lightweightDatasource[IO, UUID](cfg, rl, ByteStore.void[IO], _ => IO(None))) use {
+        PostgresDatasourceModule.datasource[IO, UUID](cfg, rl, ByteStore.void[IO], _ => IO(None))) use {
           case Right(ds) =>
             ds.prefixedChildPaths(ResourcePath.root())
               .use(_.sequence.unNone.compile.toList)
