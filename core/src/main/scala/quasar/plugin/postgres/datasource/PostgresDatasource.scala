@@ -37,14 +37,14 @@ import quasar.api.datasource.DatasourceType
 import quasar.api.resource.{ResourcePathType => RPT, _}
 import quasar.common.CPathField
 import quasar.connector.{ResourceError => RE, _}
-import quasar.connector.datasource.{BatchLoader, LightweightDatasource, Loader}
+import quasar.connector.datasource.{BatchLoader, DatasourceModule, Loader}
 import quasar.qscript.InterpretedRead
 
 import shims._
 
 final class PostgresDatasource[F[_]: MonadResourceErr: Sync](
     xa: Transactor[F])
-    extends LightweightDatasource[Resource[F, ?], Stream[F, ?], QueryResult[F]]
+    extends DatasourceModule.DS[F]
     with Logging {
 
   import PostgresDatasource._
@@ -276,6 +276,6 @@ object PostgresDatasource {
 
   def apply[F[_]: MonadResourceErr: Sync](
       xa: Transactor[F])
-      : LightweightDatasource[Resource[F, ?], Stream[F, ?], QueryResult[F]] =
+      : DatasourceModule.DS[F] =
     new PostgresDatasource(xa)
 }
