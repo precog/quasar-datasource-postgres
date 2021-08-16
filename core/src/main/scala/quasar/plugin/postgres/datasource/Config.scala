@@ -39,14 +39,16 @@ final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
     copy(connectionUri = Sanitization.sanitizeURI(connectionUri))
   }
 
-  def properties: Properties = {
-    val ps = Driver.parseURL(s"jdbc:${connectionUri.toString}", null)
+  def properties: Option[Properties] = {
+    val ops = Option(Driver.parseURL(s"jdbc:${connectionUri.toString}", null))
 
-    ps.setProperty(
-      DefaultRowFetchSizeKey,
-      ps.getProperty(DefaultRowFetchSizeKey, DefaultRowFetchSize.toString()))
+    ops map { ps =>
+      ps.setProperty(
+        DefaultRowFetchSizeKey,
+        ps.getProperty(DefaultRowFetchSizeKey, DefaultRowFetchSize.toString()))
+    }
 
-    ps
+    ops
   }
 
   def reconfigureNonSensitive(patch: PatchConfig, kind: DatasourceType)

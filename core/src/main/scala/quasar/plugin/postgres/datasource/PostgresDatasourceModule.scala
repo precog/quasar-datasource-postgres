@@ -29,7 +29,7 @@ import doobie._
 import doobie.hikari.HikariTransactor
 import doobie.implicits._
 
-import java.util.UUID
+import java.util.{Properties, UUID}
 import java.util.concurrent.Executors
 
 import org.slf4s.Logging
@@ -45,6 +45,8 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.Random
 import scala.util.control.NonFatal
+
+import scalaz.NonEmptyList
 
 object PostgresDatasourceModule extends DatasourceModule with Logging {
 
@@ -117,6 +119,12 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
         if (!v) Left(connectionInvalid(sanitizeConfig(config))) else Right(())
       }
 
+    lazy val invalidConfig =
+      DE.invalidConfiguration[Json, InitErr](
+        kind,
+        jString(Redacted),
+        NonEmptyList("Provided PostgreSQL JDBC URL is invalid"))
+
     val init = for {
       cfg <- EitherT(cfg0.pure[Resource[F, ?]])
 
@@ -126,7 +134,9 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
 
       xaPool <- EitherT.right(Blocker.cached[F](s"pgsrc-transact-$suffix"))
 
-      xa <- EitherT.right(hikariTransactor[F](cfg, awaitPool, xaPool))
+      props <- EitherT.fromOption[Resource[F, *]](cfg.properties, invalidConfig)
+
+      xa <- EitherT.right(hikariTransactor[F](cfg, props, awaitPool, xaPool))
 
       _ <- EitherT(Resource.eval(validateConnection.transact(xa) recover {
         case NonFatal(ex: Exception) =>
@@ -159,6 +169,7 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
 
   private def hikariTransactor[F[_]: Async: ContextShift](
       config: Config,
+      properties: Properties,
       connectPool: ExecutionContext,
       xaBlocker: Blocker)
       : Resource[F, HikariTransactor[F]] = {
@@ -170,7 +181,7 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
           ds.setDriverClassName(PostgresDriverFqcn)
           ds.setMaximumPoolSize(config.poolSize)
           ds.setAutoCommit(false)
-          ds.setDataSourceProperties(config.properties)
+          ds.setDataSourceProperties(properties)
           xa
         }
       }
