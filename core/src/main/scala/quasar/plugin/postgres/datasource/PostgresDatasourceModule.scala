@@ -54,9 +54,6 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
   // The duration to await validation of the initial connection.
   val ValidationTimeout: FiniteDuration = 10.seconds
 
-  // The default maximum number of database connections per-datasource.
-  val DefaultConnectionPoolSize: Int = 10
-
   val kind: DatasourceType = DatasourceType("postgres", 1L)
 
   def sanitizeConfig(config: Json): Json =
@@ -126,13 +123,11 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
 
       suffix <- EitherT.right(Resource.eval(Sync[F].delay(Random.alphanumeric.take(6).mkString)))
 
-      connPoolSize = cfg.connectionPoolSize getOrElse DefaultConnectionPoolSize
-
-      awaitPool <- EitherT.right(awaitConnPool[F](s"pgsrc-await-$suffix", connPoolSize))
+      awaitPool <- EitherT.right(awaitConnPool[F](s"pgsrc-await-$suffix", cfg.poolSize))
 
       xaPool <- EitherT.right(Blocker.cached[F](s"pgsrc-transact-$suffix"))
 
-      xa <- EitherT.right(hikariTransactor[F](cfg.connectionUri, connPoolSize, awaitPool, xaPool))
+      xa <- EitherT.right(hikariTransactor[F](cfg, awaitPool, xaPool))
 
       _ <- EitherT(Resource.eval(validateConnection.transact(xa) recover {
         case NonFatal(ex: Exception) =>
@@ -164,8 +159,7 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
       kind, c, new RuntimeException("Connection is invalid."))
 
   private def hikariTransactor[F[_]: Async: ContextShift](
-      connUri: URI,
-      connPoolSize: Int,
+      config: Config,
       connectPool: ExecutionContext,
       xaBlocker: Blocker)
       : Resource[F, HikariTransactor[F]] = {
@@ -173,9 +167,11 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
     HikariTransactor.initial[F](connectPool, xaBlocker) evalMap { xa =>
       xa.configure { ds =>
         Sync[F] delay {
-          ds.setJdbcUrl(s"jdbc:$connUri")
+          ds.setJdbcUrl(s"jdbc:${config.connectionUri}")
           ds.setDriverClassName(PostgresDriverFqcn)
-          ds.setMaximumPoolSize(connPoolSize)
+          ds.setMaximumPoolSize(config.poolSize)
+          ds.setAutoCommit(false)
+          ds.setDataSourceProperties(config.properties)
           xa
         }
       }

@@ -21,19 +21,33 @@ import slamdata.Predef._
 import argonaut._, Argonaut._
 
 import java.net.URI
+import java.util.Properties
 
 import quasar.api.datasource.{DatasourceError, DatasourceType}
 import quasar.api.datasource.DatasourceError.InvalidConfiguration
 import quasar.plugin.postgres.datasource.PostgresCodecs._
 
+import org.postgresql.Driver
+
 import scalaz.NonEmptyList
 
 final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
+  import Config._
+
   @SuppressWarnings(Array("org.wartremover.warts.Null"))
   def sanitized: Config = {
     copy(connectionUri = Sanitization.sanitizeURI(connectionUri))
   }
 
+  def properties: Properties = {
+    val ps = Driver.parseURL(s"jdbc:${connectionUri.toString}", null)
+
+    ps.setProperty(
+      DefaultRowFetchSizeKey,
+      ps.getProperty(DefaultRowFetchSizeKey, DefaultRowFetchSize.toString()))
+
+    ps
+  }
 
   def reconfigureNonSensitive(patch: PatchConfig, kind: DatasourceType)
       :Either[InvalidConfiguration[PatchConfig], Config] = {
@@ -47,9 +61,17 @@ final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
         connectionPoolSize = Some(patch.connectionPoolSize)))
     }
   }
+
+  def poolSize: Int =
+    connectionPoolSize getOrElse DefaultConnectionPoolSize
 }
 
 object Config {
+  val DefaultRowFetchSizeKey: String = "defaultRowFetchSize"
+  val DefaultRowFetchSize: Int = 64
+  // The default maximum number of database connections per-datasource.
+  val DefaultConnectionPoolSize: Int = 10
+
   implicit val codecJson: CodecJson[Config] = {
     casecodec2(Config.apply, Config.unapply)("connectionUri", "connectionPoolSize")
   }
