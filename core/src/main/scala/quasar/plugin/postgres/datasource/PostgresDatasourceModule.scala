@@ -180,6 +180,7 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
           ds.setJdbcUrl(s"jdbc:${config.connectionUri}")
           ds.setDriverClassName(PostgresDriverFqcn)
           ds.setMaximumPoolSize(config.poolSize)
+          // This is needed for `defaultRowFetchSize` to work in some situations
           ds.setAutoCommit(false)
           ds.setDataSourceProperties(properties)
           xa

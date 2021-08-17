@@ -42,6 +42,8 @@ final case class Config(connectionUri: URI, connectionPoolSize: Option[Int]) {
   def properties: Option[Properties] = {
     val ops = Option(Driver.parseURL(s"jdbc:${connectionUri.toString}", null))
 
+    // `ps` here is mutable, and `setProperty` returns `Any`, we
+    // set property and returns `ops` back after that.
     ops map { ps =>
       ps.setProperty(
         DefaultRowFetchSizeKey,
