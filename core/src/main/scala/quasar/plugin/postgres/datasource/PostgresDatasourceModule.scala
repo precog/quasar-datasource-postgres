@@ -29,8 +29,7 @@ import doobie._
 import doobie.hikari.HikariTransactor
 import doobie.implicits._
 
-import java.net.URI
-import java.util.UUID
+import java.util.{Properties, UUID}
 import java.util.concurrent.Executors
 
 import org.slf4s.Logging
@@ -47,15 +46,14 @@ import scala.concurrent.duration._
 import scala.util.Random
 import scala.util.control.NonFatal
 
+import scalaz.NonEmptyList
+
 object PostgresDatasourceModule extends DatasourceModule with Logging {
 
   type InitErr = DE.InitializationError[Json]
 
   // The duration to await validation of the initial connection.
   val ValidationTimeout: FiniteDuration = 10.seconds
-
-  // The default maximum number of database connections per-datasource.
-  val DefaultConnectionPoolSize: Int = 10
 
   val kind: DatasourceType = DatasourceType("postgres", 1L)
 
@@ -121,18 +119,24 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
         if (!v) Left(connectionInvalid(sanitizeConfig(config))) else Right(())
       }
 
+    lazy val invalidConfig =
+      DE.invalidConfiguration[Json, InitErr](
+        kind,
+        jString(Redacted),
+        NonEmptyList("Provided PostgreSQL JDBC URL is invalid"))
+
     val init = for {
       cfg <- EitherT(cfg0.pure[Resource[F, ?]])
 
       suffix <- EitherT.right(Resource.eval(Sync[F].delay(Random.alphanumeric.take(6).mkString)))
 
-      connPoolSize = cfg.connectionPoolSize getOrElse DefaultConnectionPoolSize
-
-      awaitPool <- EitherT.right(awaitConnPool[F](s"pgsrc-await-$suffix", connPoolSize))
+      awaitPool <- EitherT.right(awaitConnPool[F](s"pgsrc-await-$suffix", cfg.poolSize))
 
       xaPool <- EitherT.right(Blocker.cached[F](s"pgsrc-transact-$suffix"))
 
-      xa <- EitherT.right(hikariTransactor[F](cfg.connectionUri, connPoolSize, awaitPool, xaPool))
+      props <- EitherT.fromOption[Resource[F, *]](cfg.properties, invalidConfig)
+
+      xa <- EitherT.right(hikariTransactor[F](cfg, props, awaitPool, xaPool))
 
       _ <- EitherT(Resource.eval(validateConnection.transact(xa) recover {
         case NonFatal(ex: Exception) =>
@@ -164,8 +168,8 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
       kind, c, new RuntimeException("Connection is invalid."))
 
   private def hikariTransactor[F[_]: Async: ContextShift](
-      connUri: URI,
-      connPoolSize: Int,
+      config: Config,
+      properties: Properties,
       connectPool: ExecutionContext,
       xaBlocker: Blocker)
       : Resource[F, HikariTransactor[F]] = {
@@ -173,9 +177,12 @@ object PostgresDatasourceModule extends DatasourceModule with Logging {
     HikariTransactor.initial[F](connectPool, xaBlocker) evalMap { xa =>
       xa.configure { ds =>
         Sync[F] delay {
-          ds.setJdbcUrl(s"jdbc:$connUri")
+          ds.setJdbcUrl(s"jdbc:${config.connectionUri}")
           ds.setDriverClassName(PostgresDriverFqcn)
-          ds.setMaximumPoolSize(connPoolSize)
+          ds.setMaximumPoolSize(config.poolSize)
+          // This is needed for `defaultRowFetchSize` to work in some situations
+          ds.setAutoCommit(false)
+          ds.setDataSourceProperties(properties)
           xa
         }
       }
