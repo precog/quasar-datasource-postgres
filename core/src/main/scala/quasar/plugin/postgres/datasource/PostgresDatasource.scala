@@ -18,6 +18,8 @@ package quasar.plugin.postgres.datasource
 
 import slamdata.Predef._
 
+import java.time.format.DateTimeFormatter
+
 import cats.~>
 import cats.data.NonEmptyList
 import cats.effect._
@@ -33,12 +35,15 @@ import org.slf4s.Logging
 
 import quasar.{ScalarStage, ScalarStages}
 import quasar.api.ColumnType
+import quasar.api.DataPathSegment
 import quasar.api.datasource.DatasourceType
 import quasar.api.resource.{ResourcePathType => RPT, _}
+import quasar.api.push.InternalKey
 import quasar.common.CPathField
-import quasar.connector.{ResourceError => RE, _}
+import quasar.connector.{ResourceError => RE, Offset, _}
 import quasar.connector.datasource.{BatchLoader, DatasourceModule, Loader}
 import quasar.qscript.InterpretedRead
+import quasar.connector.datasource.Loader
 
 import shims._
 
@@ -51,36 +56,8 @@ final class PostgresDatasource[F[_]: MonadResourceErr: Sync](
 
   val kind: DatasourceType = PostgresDatasourceModule.kind
 
-  val loaders = NonEmptyList.of(Loader.Batch(BatchLoader.Full { (ir: InterpretedRead[ResourcePath]) =>
-    pathToLoc(ir.path) match {
-      case Some(Right((schema, table))) =>
-        val back = tableExists(schema, table) map { exists =>
-          if (exists)
-            Right(maskedColumns(ir.stages) match {
-              case Some((columns, nextStages)) =>
-                (tableAsJsonBytes(schema, ColumnProjections.Explicit(columns), table), nextStages)
-
-              case None =>
-                (tableAsJsonBytes(schema, ColumnProjections.All, table), ir.stages)
-            })
-          else
-            Left(RE.pathNotFound[RE](ir.path))
-        }
-
-        xa.connect(xa.kernel)
-          .evalMap(c => runCIO(c)(back.map(_.map(_.leftMap(_.translate(runCIO(c)))))))
-          .evalMap {
-            case Right((s, stages)) =>
-              QueryResult.typed(DataFormat.ldjson, ResultData.Continuous(s), stages).pure[F]
-
-            case Left(re) =>
-              MonadResourceErr[F].raiseError[QueryResult[F]](re)
-          }
-
-      case _ =>
-        Resource.eval(MonadResourceErr[F].raiseError(RE.notAResource(ir.path)))
-    }
-  }))
+  val loaders =
+    NonEmptyList.one(Loader.Batch(BatchLoader.Seek(load(_, _))))
 
   def pathIsResource(path: ResourcePath): Resource[F, Boolean] =
     Resource.eval(pathToLoc(path) match {
@@ -126,7 +103,58 @@ final class PostgresDatasource[F[_]: MonadResourceErr: Sync](
 
   ////
 
+  private def load(read: InterpretedRead[ResourcePath], offset: Option[Offset]): Resource[F, QueryResult[F]] =
+    pathToLoc(read.path) match {
+      case Some(Right((schema, table))) =>
+        val back = tableExists(schema, table) map { exists =>
+          if (exists)
+            Right(maskedColumns(read.stages) match {
+              case Some((columns, nextStages)) =>
+                (tableAsJsonBytes(schema, ColumnProjections.Explicit(columns), table, offset.flatMap(offsetProjection)), nextStages)
+
+              case None =>
+                (tableAsJsonBytes(schema, ColumnProjections.All, table, offset.flatMap(offsetProjection)), read.stages)
+            })
+          else
+            Left(RE.pathNotFound[RE](read.path))
+        }
+
+        xa.connect(xa.kernel)
+          .evalMap(c => runCIO(c)(back.map(_.map(_.leftMap(_.translate(runCIO(c)))))))
+          .evalMap {
+            case Right((s, stages)) =>
+              QueryResult.typed(DataFormat.ldjson, ResultData.Continuous(s), stages).pure[F]
+
+            case Left(re) =>
+              MonadResourceErr[F].raiseError[QueryResult[F]](re)
+          }
+
+      case _ =>
+        Resource.eval(MonadResourceErr[F].raiseError(RE.notAResource(read.path)))
+    }
+
+  private def offsetProjection(offset: Offset): Option[(Ident, String)] =
+    offset match {
+      case Offset.Internal(NonEmptyList(DataPathSegment.Field(proj), Nil), value) => {
+        val k: InternalKey.Actual[A] forSome { type A } = value.value
+
+        val offsetValue = k match {
+          case InternalKey.RealKey(num) => Some(num.toString)
+          case InternalKey.StringKey(str) => Some(str)
+          case InternalKey.DateTimeKey(dt) => Some(DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(dt))
+          case InternalKey.DateKey(d) => None
+          case InternalKey.LocalDateKey(ld) => Some(DateTimeFormatter.ISO_LOCAL_DATE.format(ld))
+          case InternalKey.LocalDateTimeKey(ldt) => Some(DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(ldt))
+        }
+
+        offsetValue.map((proj, _))
+      }
+      case _ =>
+        None
+    }
+
   private type Loc = Option[Either[Schema, (Schema, Table)]]
+  private type Predicate = Option[(Ident, String)]
 
   // Characters considered as pattern placeholders in
   // `DatabaseMetaData#getTables`
@@ -202,20 +230,30 @@ final class PostgresDatasource[F[_]: MonadResourceErr: Sync](
   private def runCIO(c: java.sql.Connection): ConnectionIO ~> F =
     λ[ConnectionIO ~> F](_.foldMap(xa.interpret).run(c))
 
-  private def tableAsJsonBytes(schema: Schema, columns: ColumnProjections, table: Table)
+  private def tableAsJsonBytes(schema: Schema, columns: ColumnProjections, table: Table, predicate: Predicate)
       : Stream[ConnectionIO, Byte] = {
 
     val schemaFr = Fragment.const0(hygienicIdent(schema))
     val tableFr = Fragment.const(hygienicIdent(table))
     val locFr = schemaFr ++ fr0"." ++ tableFr
 
+    val predicateFr = predicate match {
+      case Some((column, value)) => {
+        val col = hygienicIdent(column)
+
+        fr"WHERE $col >= $value"
+      }
+      case None =>
+        fr""
+    }
+
     val fromFr = columns match {
       case ColumnProjections.Explicit(cs) =>
         val colsFr = cs.map(n => Fragment.const(hygienicIdent(n))).intercalate(fr",")
-        Fragments.parentheses(fr"SELECT" ++ colsFr ++ fr"FROM" ++ locFr)
+        Fragments.parentheses(fr"SELECT" ++ colsFr ++ fr"FROM" ++ locFr ++ predicateFr)
 
       case ColumnProjections.All =>
-        locFr
+        Fragments.parentheses(fr"SELECT * FROM" ++ locFr ++ predicateFr)
     }
 
     val sql =
