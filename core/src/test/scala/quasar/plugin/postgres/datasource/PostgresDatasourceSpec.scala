@@ -23,6 +23,7 @@ import argonaut._, Argonaut._, JawnParser._
 import cats.~>
 import cats.effect._
 import cats.implicits._
+import cats.data.NonEmptyList
 
 import doobie._
 import doobie.implicits._
@@ -35,10 +36,12 @@ import org.specs2.specification.BeforeAfterAll
 
 import quasar.{IdStatus, ScalarStage, ScalarStages}
 import quasar.api.ColumnType
+import quasar.api.DataPathSegment
 import quasar.api.resource.{ResourcePathType => RPT, _}
 import quasar.common.CPath
 import quasar.concurrent.unsafe._
 import quasar.connector.{ResourceError => RE, _}
+import quasar.connector.Offset
 import quasar.connector.datasource.{DatasourceSpec, DatasourceModule}
 import quasar.contrib.scalaz.MonadError_
 import quasar.qscript.InterpretedRead
@@ -46,6 +49,10 @@ import quasar.qscript.InterpretedRead
 import scala.concurrent.ExecutionContext.Implicits.global
 
 import shims.applicativeToScalaz
+import skolems.∃
+import quasar.api.push.InternalKey
+import java.time.OffsetDateTime
+import spire.math.Real
 
 object PostgresDatasourceSpec
     extends DatasourceSpec[IO, Stream[IO, ?], RPT.Physical]
@@ -72,7 +79,7 @@ object PostgresDatasourceSpec
 
   val xa = Transactor.fromDriverManager[IO](
     PostgresDriverFqcn,
-    "jdbc:postgresql://localhost:54322/postgres?user=postgres&password=postgres",
+    "jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres",
     xaBlocker)
 
   val pgds: DatasourceModule.DS[IO] = PostgresDatasource[IO](xa)
@@ -368,6 +375,104 @@ object PostgresDatasourceSpec
     }
   }
 
+  "seek" >> {
+    "filters from specified offset" >> {
+      "no pushdown" >>* {
+        val setup =
+          xa.trans.apply(for {
+            _ <- sql"""DROP TABLE IF EXISTS "pgsrcSchemaA"."seek"""".update.run
+            _ <- sql"""CREATE TABLE "pgsrcSchemaA"."seek" (foo VARCHAR, jayson jsonb, off integer)""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seek" (foo, jayson, off) VALUES ('A', '{ "x": [1, 2, 3], "y": ["one", "two"] }', 1)""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seek" (foo, jayson, off) VALUES ('B', '{ "x": [3, 4, 5], "y": ["three", "four"] }', 2)""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seek" (foo, jayson, off) VALUES ('C', '{ "x": [6, 7, 8], "y": ["five", "six"] }', 3)""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seek" (foo, jayson, off) VALUES ('D', '{ "x": [9, 10, 11], "y": ["seven", "eigth"] }', 4)""".update.run
+          } yield ())
+
+        val expected = List(
+          Json(
+            "foo" := "B",
+            "jayson" :=
+              Json(
+                "x" := Json.array(jNumber(3), jNumber(4), jNumber(5)),
+                "y" := Json.array(jString("three"), jString("four"))),
+            "off" := jNumber(2)),
+          Json(
+            "foo" := "C",
+            "jayson" :=
+              Json(
+                "x" := Json.array(jNumber(6), jNumber(7), jNumber(8)),
+                "y" := Json.array(jString("five"), jString("six"))),
+            "off" := jNumber(3)),
+          Json(
+            "foo" := "D",
+            "jayson" :=
+              Json(
+                "x" := Json.array(jNumber(9), jNumber(10), jNumber(11)),
+                "y" := Json.array(jString("seven"), jString("eigth"))),
+            "off" := jNumber(4)))
+
+        val read = InterpretedRead(
+          ResourcePath.root() / ResourceName("pgsrcSchemaA") / ResourceName("seek"),
+          ScalarStages.Id)
+
+        val offset = Offset.Internal(
+          NonEmptyList.of(DataPathSegment.Field("off")),
+          ∃(InternalKey.Actual.real(Real(2))))
+
+        (setup >> resultsFrom[Json](read, offset))
+          .map(_ must (ScalarStages.Id, expected).zip(be_===, containTheSameElementsAs(_)))
+      }
+
+      "mask pushdown" >>* {
+        val setup =
+          xa.trans.apply(for {
+            _ <- sql"""DROP TABLE IF EXISTS "pgsrcSchemaA"."seekMask"""".update.run
+            _ <- sql"""CREATE TABLE "pgsrcSchemaA"."seekMask" (foo VARCHAR, jayson jsonb, off TIMESTAMP WITH TIME ZONE)""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('A', '{ "x": [1, 2, 3], "y": ["one", "two"] }', '2022-07-10T00:18:33+0000')""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('B', '{ "x": [3, 4, 5], "y": ["three", "four"] }', '2022-07-11T00:18:33+0000')""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('C', '{ "x": [6, 7, 8], "y": ["five", "six"] }', '2022-07-12T00:18:33+0000')""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('D', '{ "x": [9, 10, 11], "y": ["seven", "eigth"] }', '2022-07-13T00:18:33+0000')""".update.run
+          } yield ())
+
+        val expected = List(
+          Json(
+            "foo" := "B",
+            "jayson" :=
+              Json(
+                "x" := Json.array(jNumber(3), jNumber(4), jNumber(5)),
+                "y" := Json.array(jString("three"), jString("four")))),
+
+          Json(
+            "foo" := "C",
+            "jayson" :=
+              Json(
+                "x" := Json.array(jNumber(6), jNumber(7), jNumber(8)),
+                "y" := Json.array(jString("five"), jString("six")))),
+
+          Json(
+            "foo" := "D",
+            "jayson" :=
+              Json(
+                "x" := Json.array(jNumber(9), jNumber(10), jNumber(11)),
+                "y" := Json.array(jString("seven"), jString("eigth")))))
+
+        val mask: ScalarStage = ScalarStage.Mask(Map(
+          CPath.parse(".foo") -> ColumnType.Top,
+          CPath.parse(".jayson") -> ColumnType.Top))
+
+        val read = InterpretedRead(
+          ResourcePath.root() / ResourceName("pgsrcSchemaA") / ResourceName("seekMask"),
+          ScalarStages(IdStatus.ExcludeId, List(mask)))
+
+        val offset = Offset.Internal(
+          NonEmptyList.of(DataPathSegment.Field("off")),
+          ∃(InternalKey.Actual.dateTime(OffsetDateTime.parse("2022-07-11T00:18:33+00"))))
+
+        (setup >> resultsFrom[Json](read, offset))
+          .map(_ must (ScalarStages.Id, expected).zip(be_===, containTheSameElementsAs(_)))
+      }
+    }
+  }
   ////
 
   private final case class Widget(serial: String, width: Double, height: Double)
@@ -390,6 +495,22 @@ object PostgresDatasourceSpec
     InterpretedRead(
       ResourcePath.root() / ResourceName("pgsrcSchemaA") / ResourceName("widgets"),
       stages)
+
+  private def resultsFrom[A: DecodeJson](ir: InterpretedRead[ResourcePath], offset: Offset)
+      : IO[(ScalarStages, List[A])] =
+    pgds
+      .loadFrom(ir, offset)
+      .getOrElseF(Resource.eval(IO.raiseError(new RuntimeException("Seek failed")))) use {
+      case QueryResult.Typed(_, s, stages) =>
+        s.data.chunks.parseJsonStream[Json]
+          .map(_.as[A].toOption)
+          .unNone
+          .compile.toList
+          .tupleLeft(stages)
+
+      case qr =>
+        IO.raiseError(new RuntimeException(s"Expected QueryResult.Typed, received: $qr"))
+    }
 
   private def resultsOf[A: DecodeJson](ir: InterpretedRead[ResourcePath])
       : IO[(ScalarStages, List[A])] =

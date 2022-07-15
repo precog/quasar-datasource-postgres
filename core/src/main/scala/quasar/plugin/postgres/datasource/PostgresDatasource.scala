@@ -33,17 +33,17 @@ import fs2.{text, Pull, Stream}
 
 import org.slf4s.Logging
 
-import quasar.{ScalarStage, ScalarStages}
 import quasar.api.ColumnType
 import quasar.api.DataPathSegment
 import quasar.api.datasource.DatasourceType
-import quasar.api.resource.{ResourcePathType => RPT, _}
 import quasar.api.push.InternalKey
+import quasar.api.resource.{ResourcePathType => RPT, _}
 import quasar.common.CPathField
-import quasar.connector.{ResourceError => RE, Offset, _}
-import quasar.connector.datasource.{BatchLoader, DatasourceModule, Loader}
-import quasar.qscript.InterpretedRead
 import quasar.connector.datasource.Loader
+import quasar.connector.datasource.{BatchLoader, DatasourceModule, Loader}
+import quasar.connector.{ResourceError => RE, Offset, _}
+import quasar.qscript.InterpretedRead
+import quasar.{ScalarStage, ScalarStages}
 
 import shims._
 
@@ -108,7 +108,7 @@ final class PostgresDatasource[F[_]: MonadResourceErr: Sync](
       loc <- EitherT.fromEither[ConnectionIO](pathToLoc(read.path))
 
       predicate <- EitherT.fromEither[ConnectionIO](
-        offset.fold[Either[RE, Option[Predicate]]](Right(None))(o =>
+        offset.fold[Either[RE, Option[OffsetCondition]]](Right(None))(o =>
           offsetProjection(o, read.path).map(Some(_))))
 
       (schema, table) <- EitherT.fromEither[ConnectionIO](loc match {
@@ -140,26 +140,66 @@ final class PostgresDatasource[F[_]: MonadResourceErr: Sync](
      }
   }
 
+  private sealed trait PgVal extends Product with Serializable
 
-  private def offsetProjection(offset: Offset, path: ResourcePath): Either[RE, (Ident, String)] =
+  private object PgVal {
+    case class Whole(value: Long) extends PgVal
+    case class Floating(value: Double) extends PgVal
+    case class Str(value: String) extends PgVal
+  }
+
+  private case class OffsetCondition(
+    column: String,
+    value: PgVal,
+    tpe: Option[String])
+
+  private def offsetProjection(offset: Offset, path: ResourcePath): Either[RE, OffsetCondition] =
     offset match {
       case Offset.Internal(NonEmptyList(DataPathSegment.Field(proj), Nil), value) => {
         val k: InternalKey.Actual[A] forSome { type A } = value.value
 
-        val offsetValue = k match {
-          case InternalKey.RealKey(num) => Some(num.toString)
-          case InternalKey.StringKey(_) => None
-          case InternalKey.DateTimeKey(dt) => Some(DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(dt))
-          case InternalKey.DateKey(_) => None
-          case InternalKey.LocalDateKey(ld) => Some(DateTimeFormatter.ISO_LOCAL_DATE.format(ld))
-          case InternalKey.LocalDateTimeKey(ldt) => Some(DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(ldt))
+        val offsetValue: Option[OffsetCondition] = k match {
+          case InternalKey.RealKey(num) => {
+            val pgVal = if (num.isWhole()) {
+              PgVal.Whole(num.toLong)
+            } else {
+              PgVal.Floating(num.toDouble)
+            }
+
+            Some(OffsetCondition(proj, pgVal, None))
+          }
+          case InternalKey.StringKey(_) =>
+            None
+
+          case InternalKey.DateTimeKey(dt) =>
+            Some(
+              OffsetCondition(
+                proj,
+                PgVal.Str(DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(dt)),
+                Some("timestamp with time zone")))
+
+          case InternalKey.DateKey(_) =>
+            None
+
+          case InternalKey.LocalDateKey(ld) =>
+            Some(
+              OffsetCondition(
+                proj,
+                PgVal.Str(DateTimeFormatter.ISO_LOCAL_DATE.format(ld)),
+                Some("date")))
+
+          case InternalKey.LocalDateTimeKey(ldt) =>
+            Some(
+              OffsetCondition(
+                proj,
+                PgVal.Str(DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(ldt)),
+                Some("timestamp")))
         }
 
         offsetValue.toRight(
           RE.seekFailed(
             path,
             "Only numbers, offsetdatetime, localdate and localdatetime columns are supported for delta loads"))
-          .map((proj, _))
       }
       case _ =>
         Left(RE.seekFailed(path, "Only projection of flat columns is supported for delta loads"))
@@ -171,8 +211,6 @@ final class PostgresDatasource[F[_]: MonadResourceErr: Sync](
     case class Prefix(schema: Schema) extends Loc
     case class Leaf(schema: Schema, table: Table) extends Loc
   }
-
-  private type Predicate = (Ident, String)
 
   // Characters considered as pattern placeholders in
   // `DatabaseMetaData#getTables`
@@ -249,22 +287,37 @@ final class PostgresDatasource[F[_]: MonadResourceErr: Sync](
   private def runCIO(c: java.sql.Connection): ConnectionIO ~> F =
     λ[ConnectionIO ~> F](_.foldMap(xa.interpret).run(c))
 
-  private def tableAsJsonBytes(schema: Schema, columns: ColumnProjections, table: Table, predicate: Option[Predicate])
+  private def tableAsJsonBytes(
+    schema: Schema,
+    columns: ColumnProjections,
+    table: Table,
+    predicate: Option[OffsetCondition])
       : Stream[ConnectionIO, Byte] = {
 
     val schemaFr = Fragment.const0(hygienicIdent(schema))
     val tableFr = Fragment.const(hygienicIdent(table))
     val locFr = schemaFr ++ fr0"." ++ tableFr
 
-    val predicateFr = predicate match {
-      case Some((column, value)) => {
+    val predicateFr = Fragments.whereOrOpt(predicate map {
+      case OffsetCondition(column, value, tpe) => {
         val col = hygienicIdent(column)
 
-        fr"WHERE $col >= $value"
+        val v = value match {
+          case PgVal.Str(str) =>
+            fr"$str"
+          case PgVal.Floating(d) =>
+            fr"$d"
+          case PgVal.Whole(l) =>
+            fr"$l"
+        }
+
+        tpe.fold(
+          Fragment.const(col) ++ fr">=" ++ v)(t => {
+            val tpeFragment = Fragment.const0(s"::$t")
+            Fragment.const(col) ++ fr">=" ++ v ++ tpeFragment
+          })
       }
-      case None =>
-        fr""
-    }
+    })
 
     val fromFr = columns match {
       case ColumnProjections.Explicit(cs) =>
