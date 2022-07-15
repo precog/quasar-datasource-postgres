@@ -79,7 +79,7 @@ object PostgresDatasourceSpec
 
   val xa = Transactor.fromDriverManager[IO](
     PostgresDriverFqcn,
-    "jdbc:postgresql://localhost:54322/postgres?user=postgres&password=postgres",
+    "jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres",
     xaBlocker)
 
   val pgds: DatasourceModule.DS[IO] = PostgresDatasource[IO](xa)
@@ -428,10 +428,10 @@ object PostgresDatasourceSpec
           xa.trans.apply(for {
             _ <- sql"""DROP TABLE IF EXISTS "pgsrcSchemaA"."seekMask"""".update.run
             _ <- sql"""CREATE TABLE "pgsrcSchemaA"."seekMask" (foo VARCHAR, jayson jsonb, off TIMESTAMP WITH TIME ZONE)""".update.run
-            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('A', '{ "x": [1, 2, 3], "y": ["one", "two"] }', '2022-07-10T00:18:33+0000')""".update.run
-            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('B', '{ "x": [3, 4, 5], "y": ["three", "four"] }', '2022-07-11T00:18:33+0000')""".update.run
-            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('C', '{ "x": [6, 7, 8], "y": ["five", "six"] }', '2022-07-12T00:18:33+0000')""".update.run
-            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('D', '{ "x": [9, 10, 11], "y": ["seven", "eigth"] }', '2022-07-13T00:18:33+0000')""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('A', '{ "x": [1, 2, 3], "y": ["one", "two"] }', '2022-07-10T00:18:33Z')""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('B', '{ "x": [3, 4, 5], "y": ["three", "four"] }', '2022-07-11T00:18:33Z')""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('C', '{ "x": [6, 7, 8], "y": ["five", "six"] }', '2022-07-12T00:18:33Z')""".update.run
+            _ <- sql"""INSERT INTO "pgsrcSchemaA"."seekMask" (foo, jayson, off) VALUES ('D', '{ "x": [9, 10, 11], "y": ["seven", "eigth"] }', '2022-07-13T00:18:33Z')""".update.run
           } yield ())
 
         val expected = List(
@@ -466,7 +466,7 @@ object PostgresDatasourceSpec
 
         val offset = Offset.Internal(
           NonEmptyList.of(DataPathSegment.Field("off")),
-          ∃(InternalKey.Actual.dateTime(OffsetDateTime.parse("2022-07-11T00:18:33+00"))))
+          ∃(InternalKey.Actual.dateTime(OffsetDateTime.parse("2022-07-11T00:18:33Z"))))
 
         (setup >> resultsFrom[Json](read, offset))
           .map(_ must (ScalarStages.Id, expected).zip(be_===, containTheSameElementsAs(_)))
