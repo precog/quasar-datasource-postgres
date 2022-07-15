@@ -79,7 +79,7 @@ object PostgresDatasourceSpec
 
   val xa = Transactor.fromDriverManager[IO](
     PostgresDriverFqcn,
-    "jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres",
+    "jdbc:postgresql://localhost:54322/postgres?user=postgres&password=postgres",
     xaBlocker)
 
   val pgds: DatasourceModule.DS[IO] = PostgresDatasource[IO](xa)
