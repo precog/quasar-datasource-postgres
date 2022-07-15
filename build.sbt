@@ -56,7 +56,8 @@ lazy val core = project
       "com.precog" %% "quasar-foundation" % quasarPluginQuasarVersion.value % "test->test",
       "org.http4s" %% "jawn-fs2" % "1.0.0-RC2" % Test,
       "io.argonaut" %% "argonaut-jawn" % "6.3.0-M2" % Test
-    ))
+    ),
+    testFrameworks := Seq(TestFrameworks.Specs2))
   .enablePlugins(QuasarPlugin)
   .evictToLocal("QUASAR_PATH", "connector", true)
   .evictToLocal("QUASAR_PATH", "api", true)
